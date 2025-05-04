@@ -5,18 +5,18 @@ import json
 import time
 import os
 from tensorflow.keras.models import load_model
-from preprocessing import process_frame  # Ensure this exists and returns a preprocessed image
+from preprocessing import process_frame  # Make sure this returns a preprocessed image
 
-# Page setup
+# Set up Streamlit page
 st.set_page_config(page_title="ASL Translator", layout="wide")
 st.title("🤟 ASL Translator")
 
-# Define base paths
+# Define the base directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 model_path = os.path.join(BASE_DIR, 'Models', 'asl_mediapipe_model.h5')
 labels_path = os.path.join(BASE_DIR, 'Models', 'asl_class_indices_mediapipe.json')
 
-# Load model and label map
+# Load model and labels
 @st.cache_resource
 def load_model_and_labels():
     model = load_model(model_path, compile=False)
@@ -35,11 +35,11 @@ if 'prev_letter' not in st.session_state:
 if 'last_prediction_time' not in st.session_state:
     st.session_state.last_prediction_time = 0
 
-# Layout columns
+# UI Layout
 col1, col2 = st.columns([1, 2])
 sentence_display = col2.empty()
 
-# Control buttons
+# Sentence controls
 with col2:
     col_space, col_reset = st.columns([1, 1])
     if col_space.button("Add Space"):
@@ -49,17 +49,16 @@ with col2:
         st.session_state.prev_letter = ""
         st.session_state.last_prediction_time = 0
 
-# Upload/capture camera image
-image_data = st.camera_input("📷 Show your ASL sign to the camera")
+# Capture image from browser
+image_data = st.camera_input("📷 Show your ASL sign")
 
 if image_data is not None:
+    # Convert to OpenCV format
     file_bytes = np.asarray(bytearray(image_data.read()), dtype=np.uint8)
     frame = cv2.imdecode(file_bytes, 1)
-
-    # Show original image
     col1.image(frame, channels="BGR", caption="Captured Frame")
 
-    # Preprocess for model
+    # Preprocess and predict
     processed = process_frame(frame)
 
     if processed is not None:
@@ -70,7 +69,6 @@ if image_data is not None:
         confidence = prediction[predicted_index]
         current_time = time.time()
 
-        # Append to sentence if confident and time condition met
         if confidence > 0.8 and predicted_letter != st.session_state.prev_letter:
             if current_time - st.session_state.last_prediction_time > 1.5:
                 st.session_state.sentence += predicted_letter
@@ -79,4 +77,4 @@ if image_data is not None:
 
         sentence_display.markdown(f"## ✍️ Sentence: `{st.session_state.sentence}`")
     else:
-        st.warning("No hand detected in the image. Try again.")
+        st.warning("⚠️ Could not detect a valid hand region. Try again.")
