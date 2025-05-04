@@ -5,20 +5,18 @@ import json
 import time
 import os
 from tensorflow.keras.models import load_model
-from preprocessing import process_frame  # Ensure preprocessing.py is in the same directory
+from preprocessing import process_frame  # Ensure this exists and returns a preprocessed image
 
-# Set up the Streamlit page
+# Page setup
 st.set_page_config(page_title="ASL Translator", layout="wide")
-st.title("ASL Translator")
+st.title("🤟 ASL Translator")
 
-# Define the base directory
+# Define base paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Define paths to the model and label files
 model_path = os.path.join(BASE_DIR, 'Models', 'asl_mediapipe_model.h5')
 labels_path = os.path.join(BASE_DIR, 'Models', 'asl_class_indices_mediapipe.json')
 
-# Load the trained model and label map
+# Load model and label map
 @st.cache_resource
 def load_model_and_labels():
     model = load_model(model_path, compile=False)
@@ -37,12 +35,11 @@ if 'prev_letter' not in st.session_state:
 if 'last_prediction_time' not in st.session_state:
     st.session_state.last_prediction_time = 0
 
-# Layout for video and sentence
+# Layout columns
 col1, col2 = st.columns([1, 2])
-video_display = col1.empty()
 sentence_display = col2.empty()
 
-# Buttons to edit sentence
+# Control buttons
 with col2:
     col_space, col_reset = st.columns([1, 1])
     if col_space.button("Add Space"):
@@ -52,28 +49,20 @@ with col2:
         st.session_state.prev_letter = ""
         st.session_state.last_prediction_time = 0
 
-# Parameters
-time_threshold = 1.5  # seconds
-confidence_threshold = 0.8  # model confidence
+# Upload/capture camera image
+image_data = st.camera_input("📷 Show your ASL sign to the camera")
 
-# Start/Stop checkbox
-run = st.checkbox("Start Camera")
+if image_data is not None:
+    file_bytes = np.asarray(bytearray(image_data.read()), dtype=np.uint8)
+    frame = cv2.imdecode(file_bytes, 1)
 
-# Main loop
-if run:
-    cap = cv2.VideoCapture(0)
+    # Show original image
+    col1.image(frame, channels="BGR", caption="Captured Frame")
 
-    while run:
-        ret, frame = cap.read()
-        if not ret:
-            st.warning("Failed to capture video.")
-            break
+    # Preprocess for model
+    processed = process_frame(frame)
 
-        processed = process_frame(frame)
-        if processed is None:
-            video_display.image(frame, channels="BGR")
-            continue
-
+    if processed is not None:
         input_data = np.expand_dims(processed, axis=0)
         prediction = model.predict(input_data)[0]
         predicted_index = np.argmax(prediction)
@@ -81,13 +70,13 @@ if run:
         confidence = prediction[predicted_index]
         current_time = time.time()
 
-        if confidence > confidence_threshold and predicted_letter != st.session_state.prev_letter:
-            if current_time - st.session_state.last_prediction_time > time_threshold:
+        # Append to sentence if confident and time condition met
+        if confidence > 0.8 and predicted_letter != st.session_state.prev_letter:
+            if current_time - st.session_state.last_prediction_time > 1.5:
                 st.session_state.sentence += predicted_letter
                 st.session_state.prev_letter = predicted_letter
                 st.session_state.last_prediction_time = current_time
 
-        video_display.image(frame, channels="BGR")
         sentence_display.markdown(f"## ✍️ Sentence: `{st.session_state.sentence}`")
-
-    cap.release()
+    else:
+        st.warning("No hand detected in the image. Try again.")
