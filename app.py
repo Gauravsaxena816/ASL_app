@@ -24,13 +24,12 @@ def load_model_and_labels():
     model = load_model(model_path, compile=False)
     with open(labels_path, "r") as f:
         label_map = json.load(f)
-    # Reverse the label map: index -> label
     label_map = {v: k for k, v in label_map.items()}
     return model, label_map
 
 model, label_map = load_model_and_labels()
 
-# Initialize session state for sentence construction
+# Initialize session state
 if 'sentence' not in st.session_state:
     st.session_state.sentence = ""
 if 'prev_letter' not in st.session_state:
@@ -38,15 +37,12 @@ if 'prev_letter' not in st.session_state:
 if 'last_prediction_time' not in st.session_state:
     st.session_state.last_prediction_time = 0
 
-# Initialize video capture
-cap = cv2.VideoCapture(0)
-
-# Layout for displaying video and sentence
+# Layout for video and sentence
 col1, col2 = st.columns([1, 2])
 video_display = col1.empty()
 sentence_display = col2.empty()
 
-# Buttons for sentence manipulation
+# Buttons to edit sentence
 with col2:
     col_space, col_reset = st.columns([1, 1])
     if col_space.button("Add Space"):
@@ -56,42 +52,42 @@ with col2:
         st.session_state.prev_letter = ""
         st.session_state.last_prediction_time = 0
 
-# Parameters for prediction
+# Parameters
 time_threshold = 1.5  # seconds
-confidence_threshold = 0.8  # adjust based on model performance
+confidence_threshold = 0.8  # model confidence
 
-# Main loop for real-time prediction
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        st.warning("Failed to capture video.")
-        break
+# Start/Stop checkbox
+run = st.checkbox("Start Camera")
 
-    # Process the frame to detect and crop the hand
-    processed = process_frame(frame)
-    if processed is None:
+# Main loop
+if run:
+    cap = cv2.VideoCapture(0)
+
+    while run:
+        ret, frame = cap.read()
+        if not ret:
+            st.warning("Failed to capture video.")
+            break
+
+        processed = process_frame(frame)
+        if processed is None:
+            video_display.image(frame, channels="BGR")
+            continue
+
+        input_data = np.expand_dims(processed, axis=0)
+        prediction = model.predict(input_data)[0]
+        predicted_index = np.argmax(prediction)
+        predicted_letter = label_map[predicted_index]
+        confidence = prediction[predicted_index]
+        current_time = time.time()
+
+        if confidence > confidence_threshold and predicted_letter != st.session_state.prev_letter:
+            if current_time - st.session_state.last_prediction_time > time_threshold:
+                st.session_state.sentence += predicted_letter
+                st.session_state.prev_letter = predicted_letter
+                st.session_state.last_prediction_time = current_time
+
         video_display.image(frame, channels="BGR")
-        continue
+        sentence_display.markdown(f"## ✍️ Sentence: `{st.session_state.sentence}`")
 
-    # Expand dimensions and predict the letter
-    input_data = np.expand_dims(processed, axis=0)
-    prediction = model.predict(input_data)[0]
-    predicted_index = np.argmax(prediction)
-    predicted_letter = label_map[predicted_index]
-    confidence = prediction[predicted_index]
-    current_time = time.time()
-
-    # Append the predicted letter to the sentence if conditions are met
-    if confidence > confidence_threshold and predicted_letter != st.session_state.prev_letter:
-        if current_time - st.session_state.last_prediction_time > time_threshold:
-            st.session_state.sentence += predicted_letter
-            st.session_state.prev_letter = predicted_letter
-            st.session_state.last_prediction_time = current_time
-
-    # Display the video feed and the constructed sentence
-    video_display.image(frame, channels="BGR")
-    sentence_display.markdown(f"## ✍️ Sentence: `{st.session_state.sentence}`")
-
-# Release the video capture and close windows
-cap.release()
-cv2.destroyAllWindows()
+    cap.release()
